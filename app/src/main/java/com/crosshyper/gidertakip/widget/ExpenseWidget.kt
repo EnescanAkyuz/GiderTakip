@@ -6,6 +6,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.GlanceTheme
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -21,25 +22,31 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.crosshyper.gidertakip.MainActivity
-import com.crosshyper.gidertakip.data.AppDatabase
+import com.crosshyper.gidertakip.data.local.database.AppDatabase
 import kotlinx.coroutines.flow.first
-import androidx.glance.GlanceTheme
+import java.util.Calendar
+import java.util.Locale
 
 class ExpenseWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val database = AppDatabase.getDatabase(context)
-        val totalAmount = database.expenseDao().getTotalExpense().first() ?: 0.0
+        val expenses = database.expenseDao().observeAllExpenses().first()
+        val now = System.currentTimeMillis()
+        val monthTotal = expenses.filter { isInCurrentMonth(it.date, now) }.sumOf { it.amount }
+        val upcomingCount = expenses.count {
+            it.nextDueDate != null && it.nextDueDate >= now && it.nextDueDate <= now + 1000L * 60 * 60 * 24 * 30
+        }
 
         provideContent {
             GlanceTheme {
-                WidgetContent(totalAmount.toString())
+                WidgetContent(monthTotal = monthTotal, upcomingCount = upcomingCount)
             }
         }
     }
 
     @Composable
-    private fun WidgetContent(total: String) {
+    private fun WidgetContent(monthTotal: Double, upcomingCount: Int) {
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -50,11 +57,11 @@ class ExpenseWidget : GlanceAppWidget() {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "Toplam Gider",
-                    style = TextStyle(fontSize = 14.sp, color = GlanceTheme.colors.onSurface)
+                    text = "Bu Ay",
+                    style = TextStyle(fontSize = 13.sp, color = GlanceTheme.colors.onSurface)
                 )
                 Text(
-                    text = "$total TL",
+                    text = String.format(Locale("tr", "TR"), "%,.0f TL", monthTotal),
                     style = TextStyle(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
@@ -62,16 +69,23 @@ class ExpenseWidget : GlanceAppWidget() {
                     )
                 )
                 Text(
-                    text = "Hızlı Ekle +",
+                    text = "Yaklaşan ödeme: $upcomingCount",
                     modifier = GlanceModifier.padding(top = 8.dp),
                     style = TextStyle(
-                        fontSize = 12.sp, 
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = GlanceTheme.colors.secondary
                     )
                 )
             }
         }
+    }
+
+    private fun isInCurrentMonth(timestamp: Long, now: Long): Boolean {
+        val current = Calendar.getInstance().apply { timeInMillis = now }
+        val target = Calendar.getInstance().apply { timeInMillis = timestamp }
+        return current.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+            current.get(Calendar.MONTH) == target.get(Calendar.MONTH)
     }
 }
 
